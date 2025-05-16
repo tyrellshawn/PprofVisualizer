@@ -1,0 +1,22 @@
+The above error occurred in the <TabsContent> component:
+
+    at https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=bfc48532:786:13
+    at _c5 (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/src/components/ui/tabs.tsx:72:12)
+    at div
+    at main
+    at div
+    at div
+    at ProfileView (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/src/pages/profile-view.tsx:39:18)
+    at Route (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=bfc48532:338:16)
+    at Switch (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=bfc48532:394:17)
+    at Router
+    at Provider (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-72NOSSVO.js?v=bfc48532:38:15)
+    at TooltipProvider (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=bfc48532:947:5)
+    at QueryClientProvider (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=bfc48532:2881:3)
+    at App
+    at V (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/next-themes.js?v=bfc48532:44:25)
+    at J (https://ff4508ea-33ca-4cb7-b6d9-fb2bd21c7f4b-00-32uuxo96x22lp.spock.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/next-themes.js?v=bfc48532:42:18)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries.
+`TabsContent` must be used within `Tabs
