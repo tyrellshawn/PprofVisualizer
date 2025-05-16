@@ -1,0 +1,19 @@
+{
+  "name": "@pprofviz/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend server for Go pprof profile visualization",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_ENV=development tsx index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^3.3.2"
+  }
+}
