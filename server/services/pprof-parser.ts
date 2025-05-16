@@ -73,15 +73,43 @@ export class PprofParser {
    */
   async fetchFromUrl(url: string, profileType: string = 'cpu'): Promise<{ metadata: any; data: string }> {
     try {
-      // Construct appropriate URL for pprof endpoint
+      // Handle Go example applications specially
+      const isGoExample = url.includes('localhost:606');
       let pprofUrl = url;
-      if (!url.includes('debug/pprof')) {
+      
+      // Configure URLs for our Go example applications
+      if (isGoExample) {
+        console.log(`Fetching from Go example app: ${url}`);
+        
+        if (!url.includes('debug/pprof')) {
+          // For CPU profiles, append seconds parameter
+          if (profileType === 'cpu') {
+            pprofUrl = url.endsWith('/') 
+              ? `${url}debug/pprof/profile?seconds=10`
+              : `${url}/debug/pprof/profile?seconds=10`;
+          } else {
+            // For other profile types
+            pprofUrl = url.endsWith('/') 
+              ? `${url}debug/pprof/${profileType}`
+              : `${url}/debug/pprof/${profileType}`;
+          }
+        } else if (profileType === 'cpu' && !url.includes('seconds=')) {
+          // If it's already a debug/pprof URL but missing seconds for CPU profile
+          pprofUrl = url.includes('?') 
+            ? `${url}&seconds=10` 
+            : `${url}?seconds=10`;
+        }
+        
+        console.log(`Adjusted pprof URL: ${pprofUrl}`);
+      } else if (!url.includes('debug/pprof')) {
+        // Standard handling for non-example URLs
         pprofUrl = url.endsWith('/') 
           ? `${url}debug/pprof/${profileType}`
           : `${url}/debug/pprof/${profileType}`;
       }
       
       // Fetch the profile
+      console.log(`Fetching profile from: ${pprofUrl}`);
       const response = await fetch(pprofUrl);
       
       if (!response.ok) {
@@ -89,6 +117,7 @@ export class PprofParser {
       }
       
       const buffer = await response.buffer();
+      console.log(`Successfully fetched ${buffer.length} bytes`);
       
       // Parse the fetched data
       return this.parseData(buffer);
