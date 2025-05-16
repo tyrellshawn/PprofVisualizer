@@ -1,151 +1,141 @@
 #!/bin/bash
 
-# Script to generate various pprof profiles from example Go applications
+# Script to generate various Go pprof profiles from example applications
+# Creates CPU, memory, block, and mutex profiles for visualization
 
-# Set output directory
-OUTPUT_DIR="./profiles"
-mkdir -p $OUTPUT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUTPUT_DIR="$SCRIPT_DIR/profiles"
 
-# Colors for output
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+# Create output directory if it doesn't exist
+mkdir -p "$OUTPUT_DIR"
 
-echo -e "${BLUE}=== Go pprof Profile Generator ===${NC}"
-echo "This script will generate various profiles from example Go applications."
-echo "Profiles will be saved to: $OUTPUT_DIR"
-echo ""
+# Build all example applications
+echo "Building example applications..."
+cd "$SCRIPT_DIR/webservice" && go build -o webservice main.go
+cd "$SCRIPT_DIR/memoryapp" && go build -o memoryapp main.go
+cd "$SCRIPT_DIR/concurrency" && go build -o concurrency main.go
 
-# Function to build Go applications
-build_apps() {
-  echo -e "${BLUE}Building example applications...${NC}"
-  
-  # Build the web service
-  cd webservice
-  go build -o main .
-  cd ..
-  
-  # Build the memory app
-  cd memoryapp 
-  go build -o main .
-  cd ..
-  
-  # Build the concurrency app
-  cd concurrency
-  go build -o main .
-  cd ..
-  
-  echo -e "${GREEN}All applications built successfully.${NC}"
-  echo ""
+# Function to capture profile from a running server
+capture_server_profile() {
+    local app_name=$1
+    local port=$2
+    local profile_type=$3
+    local duration=$4
+    local output_file="$OUTPUT_DIR/${app_name}_${profile_type}.pprof"
+    
+    echo "Capturing $profile_type profile from $app_name on port $port..."
+    go tool pprof -$profile_type -seconds $duration -output "$output_file" http://localhost:$port/debug/pprof/$profile_type
+    
+    echo "  Profile saved to: $output_file"
 }
 
-# Generate CPU profile from web service
-generate_webservice_cpu() {
-  echo -e "${BLUE}Generating CPU profile from web service...${NC}"
-  echo "Starting web service on port 6060..."
-  
-  # Start the web service in the background
-  cd webservice
-  ./main &
-  WEB_PID=$!
-  
-  # Allow service to start
-  sleep 2
-  
-  echo "Making requests to generate CPU load..."
-  # Generate load with multiple requests
-  for i in {1..50}; do
-    curl -s "http://localhost:6060/search?q=user" > /dev/null &
-    curl -s "http://localhost:6060/compute" > /dev/null &
-    if [ $((i % 10)) -eq 0 ]; then
-      echo "Made $i requests..."
-    fi
-    sleep 0.1
-  done
-  
-  # Capture the CPU profile
-  echo "Capturing CPU profile..."
-  curl -s "http://localhost:6060/debug/pprof/profile?seconds=5" > "$OUTPUT_DIR/webservice_cpu.pprof"
-  
-  # Kill the web service
-  kill $WEB_PID
-  cd ..
-  
-  echo -e "${GREEN}CPU profile saved to $OUTPUT_DIR/webservice_cpu.pprof${NC}"
-  echo ""
+# Function to generate load on a server
+generate_load() {
+    local app_name=$1
+    local port=$2
+    local endpoint=$3
+    local requests=$4
+    local concurrency=${5:-5}
+    
+    echo "Generating load on $app_name ($endpoint)..."
+    
+    for ((i = 1; i <= $requests; i++)); do
+        curl -s "http://localhost:$port/$endpoint" > /dev/null &
+        
+        # Limit concurrency
+        if (( i % $concurrency == 0 )); then
+            wait
+        fi
+    done
+    
+    # Wait for any remaining requests to complete
+    wait
 }
 
-# Generate Heap profile from memory app
-generate_memory_heap() {
-  echo -e "${BLUE}Generating Heap profile from memory app...${NC}"
-  echo "Starting memory app on port 6061..."
-  
-  # Start the memory app in the background with leak simulation
-  cd memoryapp
-  ./main -http -leak &
-  MEM_PID=$!
-  
-  # Allow the app to run and allocate memory
-  echo "Letting memory app run for 10 seconds to allocate memory..."
-  sleep 10
-  
-  # Capture the heap profile
-  echo "Capturing Heap profile..."
-  curl -s "http://localhost:6061/debug/pprof/heap" > "$OUTPUT_DIR/memory_heap.pprof"
-  
-  # Kill the memory app
-  kill $MEM_PID
-  cd ..
-  
-  echo -e "${GREEN}Heap profile saved to $OUTPUT_DIR/memory_heap.pprof${NC}"
-  echo ""
-}
+# Start and profile webservice application
+echo "======================"
+echo "Profiling webservice"
+echo "======================"
 
-# Generate Block and Mutex profiles from concurrency app
-generate_concurrency_profiles() {
-  echo -e "${BLUE}Generating Block and Mutex profiles from concurrency app...${NC}"
-  echo "Starting concurrency app on port 6062 with high contention..."
-  
-  # Start the concurrency app in the background with high contention
-  cd concurrency
-  ./main -http -highcontention &
-  CONC_PID=$!
-  
-  # Allow the app to run and generate contention
-  echo "Letting concurrency app run for 10 seconds to generate contention..."
-  sleep 10
-  
-  # Capture the block profile
-  echo "Capturing Block profile..."
-  curl -s "http://localhost:6062/debug/pprof/block" > "$OUTPUT_DIR/concurrency_block.pprof"
-  
-  # Capture the mutex profile
-  echo "Capturing Mutex profile..."
-  curl -s "http://localhost:6062/debug/pprof/mutex" > "$OUTPUT_DIR/concurrency_mutex.pprof"
-  
-  # Kill the concurrency app
-  kill $CONC_PID
-  cd ..
-  
-  echo -e "${GREEN}Block profile saved to $OUTPUT_DIR/concurrency_block.pprof${NC}"
-  echo -e "${GREEN}Mutex profile saved to $OUTPUT_DIR/concurrency_mutex.pprof${NC}"
-  echo ""
-}
+cd "$SCRIPT_DIR/webservice"
+./webservice &
+WEB_SERVICE_PID=$!
 
-# Main execution
+# Give the server time to start up
+sleep 2
 
-# Build the applications
-build_apps
+# Generate load
+generate_load "webservice" "8080" "api/products" 20
+generate_load "webservice" "8080" "api/search?q=product" 10
+generate_load "webservice" "8080" "api/loadtest" 5 1
 
-# Generate profiles
-generate_webservice_cpu
-generate_memory_heap
-generate_concurrency_profiles
+# Capture profiles
+capture_server_profile "webservice" "8080" "profile" 5   # CPU profile
+capture_server_profile "webservice" "8080" "heap" 1      # Memory profile
+capture_server_profile "webservice" "8080" "allocs" 1    # Memory allocations profile
 
-echo -e "${GREEN}All profiles generated successfully!${NC}"
-echo "You can now upload these profiles to the visualization tool:"
-echo "- $OUTPUT_DIR/webservice_cpu.pprof (CPU profile)"
-echo "- $OUTPUT_DIR/memory_heap.pprof (Heap profile)"
-echo "- $OUTPUT_DIR/concurrency_block.pprof (Block profile)"
-echo "- $OUTPUT_DIR/concurrency_mutex.pprof (Mutex profile)"
+# Clean up
+kill $WEB_SERVICE_PID
+wait $WEB_SERVICE_PID 2>/dev/null || true
+
+# Start and profile memory application
+echo "======================"
+echo "Profiling memoryapp"
+echo "======================"
+
+cd "$SCRIPT_DIR/memoryapp"
+./memoryapp &
+MEMORY_APP_PID=$!
+
+# Give the server time to start up
+sleep 2
+
+# Generate load
+generate_load "memoryapp" "8081" "allocate?size=5000000" 10
+generate_load "memoryapp" "8081" "pool" 30
+generate_load "memoryapp" "8081" "start-leak" 1
+sleep 5  # Let the memory leak occur for a bit
+
+# Capture profiles
+capture_server_profile "memoryapp" "8081" "profile" 5    # CPU profile
+capture_server_profile "memoryapp" "8081" "heap" 1       # Memory profile
+capture_server_profile "memoryapp" "8081" "allocs" 1     # Memory allocations profile
+
+# Clean up
+kill $MEMORY_APP_PID
+wait $MEMORY_APP_PID 2>/dev/null || true
+
+# Start and profile concurrency application
+echo "======================"
+echo "Profiling concurrency"
+echo "======================"
+
+cd "$SCRIPT_DIR/concurrency"
+./concurrency &
+CONCURRENCY_PID=$!
+
+# Give the server time to start up
+sleep 2
+
+# Generate load
+generate_load "concurrency" "8082" "mutex-demo" 1
+sleep 2
+generate_load "concurrency" "8082" "rwmutex-demo" 1
+sleep 2
+generate_load "concurrency" "8082" "channel-demo" 1
+sleep 5  # Let the concurrency demos run
+
+# Capture profiles
+capture_server_profile "concurrency" "8082" "profile" 5  # CPU profile
+capture_server_profile "concurrency" "8082" "block" 1    # Block profile
+capture_server_profile "concurrency" "8082" "mutex" 1    # Mutex profile
+
+# Clean up
+kill $CONCURRENCY_PID
+wait $CONCURRENCY_PID 2>/dev/null || true
+
+echo "======================"
+echo "All profiles generated"
+echo "======================"
+echo "Profiles are available in: $OUTPUT_DIR"
+ls -l "$OUTPUT_DIR"

@@ -6,239 +6,239 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	_ "net/http/pprof" // Import pprof for automatic HTTP profiling endpoints
+	"net/http/pprof"
+	"os"
 	"runtime"
 	"sync"
 	"time"
 )
 
-// User represents a user in our system
-type User struct {
-	ID        int       `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	Data      []byte    `json:"data,omitempty"`
+// Product represents a product data model
+type Product struct {
+	ID          int      `json:"id"`
+	Name        string   `json:"name"`
+	Price       float64  `json:"price"`
+	Description string   `json:"description"`
+	Categories  []string `json:"categories"`
+	Rating      float64  `json:"rating"`
+	ReviewCount int      `json:"reviewCount"`
 }
 
-// Global variables
-var (
-	users     = make(map[int]*User)
-	userMutex = &sync.RWMutex{}
-	userCache = make(map[int]*User)
-	cacheMu   = &sync.RWMutex{}
-)
+// Database is a simple in-memory database
+type Database struct {
+	products map[int]Product
+	mutex    sync.RWMutex
+}
 
-func main() {
-	// Enable CPU and memory profiling
-	runtime.SetBlockProfileRate(1)
-	runtime.SetMutexProfileFraction(1)
+// NewDatabase creates a new database with sample data
+func NewDatabase() *Database {
+	db := &Database{
+		products: make(map[int]Product),
+	}
 
-	// Pre-populate with some users
+	// Generate sample products
+	categories := []string{"Electronics", "Books", "Clothing", "Home", "Toys"}
 	for i := 1; i <= 1000; i++ {
-		users[i] = &User{
-			ID:        i,
-			Name:      fmt.Sprintf("User %d", i),
-			Email:     fmt.Sprintf("user%d@example.com", i),
-			CreatedAt: time.Now().Add(-time.Duration(rand.Intn(10000)) * time.Hour),
-			Data:      make([]byte, 1024*i%50), // Varying sizes to create memory patterns
+		db.products[i] = Product{
+			ID:          i,
+			Name:        fmt.Sprintf("Product %d", i),
+			Price:       rand.Float64() * 1000,
+			Description: generateRandomText(200),
+			Categories:  randomCategories(categories),
+			Rating:      rand.Float64() * 5,
+			ReviewCount: rand.Intn(1000),
 		}
 	}
 
-	// API routes
-	http.HandleFunc("/users", getAllUsers)
-	http.HandleFunc("/users/", getUser)
-	http.HandleFunc("/search", searchUsers)
-	http.HandleFunc("/compute", computeExpensive)
-
-	// Start server
-	fmt.Println("Starting server at :6060")
-	fmt.Println("Profile endpoints available at: http://localhost:6060/debug/pprof/")
-	fmt.Println("To capture a 30s CPU profile: http://localhost:6060/debug/pprof/profile")
-	fmt.Println("To view heap profile: http://localhost:6060/debug/pprof/heap")
-	fmt.Println("To view goroutine profile: http://localhost:6060/debug/pprof/goroutine")
-	fmt.Println("To view block profile: http://localhost:6060/debug/pprof/block")
-	fmt.Println("To view mutex profile: http://localhost:6060/debug/pprof/mutex")
-	log.Fatal(http.ListenAndServe(":6060", nil))
+	return db
 }
 
-// getAllUsers returns all users (potentially memory intensive)
-func getAllUsers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+// generateRandomText generates a random text of n characters
+func generateRandomText(n int) string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
 	}
-
-	userMutex.RLock()
-	defer userMutex.RUnlock()
-
-	// This creates a new array each time, which is memory intensive on large datasets
-	userList := make([]*User, 0, len(users))
-	for _, u := range users {
-		userList = append(userList, u)
-	}
-
-	// Simulate data processing
-	processUserData(userList)
-
-	// Marshal and send response
-	w.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode(userList)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	return string(b)
 }
 
-// getUser returns a specific user by ID
-func getUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Parse ID from URL
-	var id int
-	_, err := fmt.Sscanf(r.URL.Path, "/users/%d", &id)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-
-	// Check cache first (demonstrates mutex contention when many concurrent requests)
-	cacheMu.RLock()
-	if cachedUser, found := userCache[id]; found {
-		cacheMu.RUnlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(cachedUser)
-		return
-	}
-	cacheMu.RUnlock()
-
-	// Not in cache, get from main storage
-	userMutex.RLock()
-	user, found := users[id]
-	userMutex.RUnlock()
-
-	if !found {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-
-	// Add to cache
-	cacheMu.Lock()
-	userCache[id] = user
-	cacheMu.Unlock()
-
-	// Marshal and send response
-	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(user)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-// searchUsers searches for users (CPU intensive)
-func searchUsers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	query := r.URL.Query().Get("q")
-	if query == "" {
-		http.Error(w, "Query parameter 'q' is required", http.StatusBadRequest)
-		return
-	}
-
-	// CPU-intensive operation
-	results := make([]*User, 0)
-	userMutex.RLock()
-	for _, u := range users {
-		// Inefficient string search algorithm to generate CPU load
-		if inefficientContains(u.Name, query) || inefficientContains(u.Email, query) {
-			results = append(results, u)
-		}
-	}
-	userMutex.RUnlock()
-
-	// Marshal and send response
-	w.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode(results)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-// computeExpensive performs an expensive computation (CPU intensive)
-func computeExpensive(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Simulate a complex computation
-	start := time.Now()
-	result := expensiveComputation(20)
-	duration := time.Since(start)
-
-	// Return the result
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"result":   result,
-		"duration": duration.String(),
-	})
-}
-
-// Helper functions that generate CPU/memory/mutex contention
-
-// processUserData simulates data processing on user records
-func processUserData(users []*User) {
-	var wg sync.WaitGroup
-	for _, u := range users {
-		wg.Add(1)
-		go func(user *User) {
-			defer wg.Done()
-			// Simulate processing that creates garbage
-			data := make([]byte, 1024)
-			for i := range data {
-				data[i] = byte(rand.Intn(256))
-			}
-			user.Data = data
-		}(u)
-	}
-	wg.Wait()
-}
-
-// inefficientContains is an inefficient string search to generate CPU load
-func inefficientContains(haystack, needle string) bool {
-	if len(needle) == 0 {
-		return true
+// randomCategories returns random categories
+func randomCategories(categories []string) []string {
+	numCategories := rand.Intn(3) + 1
+	selectedCategories := make([]string, numCategories)
+	
+	for i := 0; i < numCategories; i++ {
+		selectedCategories[i] = categories[rand.Intn(len(categories))]
 	}
 	
-	// Intentionally inefficient algorithm
-	for i := 0; i <= len(haystack)-len(needle); i++ {
-		match := true
-		for j := 0; j < len(needle); j++ {
-			if haystack[i+j] != needle[j] {
-				match = false
-				break
+	return selectedCategories
+}
+
+func main() {
+	// Seed random number generator
+	rand.Seed(time.Now().UnixNano())
+	
+	// Create a new database
+	db := NewDatabase()
+	
+	// Create a new server mux
+	mux := http.NewServeMux()
+	
+	// Add pprof handlers
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	
+	// API endpoints
+	mux.HandleFunc("/api/products", func(w http.ResponseWriter, r *http.Request) {
+		db.mutex.RLock()
+		defer db.mutex.RUnlock()
+		
+		products := make([]Product, 0, len(db.products))
+		for _, product := range db.products {
+			products = append(products, product)
+		}
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(products)
+	})
+	
+	mux.HandleFunc("/api/products/", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Path[len("/api/products/"):]
+		var productID int
+		fmt.Sscanf(id, "%d", &productID)
+		
+		db.mutex.RLock()
+		defer db.mutex.RUnlock()
+		
+		product, ok := db.products[productID]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(product)
+	})
+	
+	// Search endpoint (CPU intensive)
+	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("q")
+		if query == "" {
+			http.Error(w, "Missing query parameter", http.StatusBadRequest)
+			return
+		}
+		
+		db.mutex.RLock()
+		defer db.mutex.RUnlock()
+		
+		results := make([]Product, 0)
+		
+		// Intentionally inefficient search to generate CPU load
+		for _, product := range db.products {
+			// Simple string matching
+			matches := false
+			
+			// Check name
+			if containsIgnoreCase(product.Name, query) {
+				matches = true
+			}
+			
+			// Check description (inefficient)
+			if containsIgnoreCase(product.Description, query) {
+				matches = true
+			}
+			
+			// Check categories (inefficient)
+			for _, category := range product.Categories {
+				if containsIgnoreCase(category, query) {
+					matches = true
+					break
+				}
+			}
+			
+			if matches {
+				results = append(results, product)
 			}
 		}
-		if match {
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(results)
+	})
+	
+	// Load test endpoint
+	mux.HandleFunc("/api/loadtest", func(w http.ResponseWriter, r *http.Request) {
+		iterations := 1000000
+		result := 0
+		
+		// CPU-bound work
+		for i := 0; i < iterations; i++ {
+			result += i * i
+		}
+		
+		// Memory allocation
+		data := make([]byte, 10*1024*1024) // 10MB
+		for i := range data {
+			data[i] = byte(rand.Intn(256))
+		}
+		
+		fmt.Fprintf(w, "Load test completed: %d\n", result)
+	})
+	
+	// Status endpoint
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Server is running\n")
+		fmt.Fprintf(w, "NumGoroutine: %d\n", runtime.NumGoroutine())
+		
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		fmt.Fprintf(w, "Alloc: %v MiB\n", m.Alloc/1024/1024)
+		fmt.Fprintf(w, "TotalAlloc: %v MiB\n", m.TotalAlloc/1024/1024)
+		fmt.Fprintf(w, "Sys: %v MiB\n", m.Sys/1024/1024)
+		fmt.Fprintf(w, "NumGC: %v\n", m.NumGC)
+	})
+	
+	// Get the port from environment or use default
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	
+	// Start the server
+	serverAddr := ":" + port
+	fmt.Printf("Starting server on %s\n", serverAddr)
+	fmt.Printf("pprof enabled at /debug/pprof/\n")
+	log.Fatal(http.ListenAndServe(serverAddr, mux))
+}
+
+// containsIgnoreCase checks if a string contains a substring, ignoring case
+func containsIgnoreCase(s, substr string) bool {
+	s, substr = toLower(s), toLower(substr)
+	return contains(s, substr)
+}
+
+// toLower converts a string to lowercase
+func toLower(s string) string {
+	result := make([]byte, len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 32
+		}
+		result[i] = c
+	}
+	return string(result)
+}
+
+// contains checks if a string contains a substring
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
 			return true
 		}
 	}
 	return false
-}
-
-// expensiveComputation performs a CPU-intensive computation
-func expensiveComputation(n int) int {
-	if n <= 1 {
-		return 1
-	}
-	// Intentionally inefficient algorithm
-	return expensiveComputation(n-1) + expensiveComputation(n-2)
 }
