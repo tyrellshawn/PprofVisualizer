@@ -1,312 +1,384 @@
 package main
 
 import (
-	"flag"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
-	_ "net/http/pprof" // Import pprof for HTTP profiling
-	"os"
+	"net/http/pprof"
 	"runtime"
-	"runtime/pprof"
 	"sync"
 	"time"
 )
 
-// Shared resources with mutex protection
+// A concurrency-focused application to demonstrate block and mutex profiles
+// Useful for generating block and mutex profiles for visualization
+
+// Shared resource that will be accessed concurrently
+type SharedResource struct {
+	data    map[string]int
+	counter int
+	mutex   sync.Mutex
+	rwMutex sync.RWMutex
+}
+
+// Global shared resources
 var (
-	sharedData    = make(map[string][]byte)
-	sharedDataMu  = &sync.RWMutex{}
-	sharedCounter = 0
-	counterMu     = &sync.Mutex{}
-	waitGroup     = sync.WaitGroup{}
+	// Basic mutex protected resource
+	basicResource = &SharedResource{
+		data: make(map[string]int),
+	}
+
+	// RWMutex protected resource
+	rwResource = &SharedResource{
+		data: make(map[string]int),
+	}
+
+	// Channels for different patterns
+	workChannel  = make(chan int, 100)  // Buffered channel
+	resultChannel = make(chan int, 100) // Buffered channel
+	controlChannel = make(chan bool)    // Unbuffered control channel
+	
+	// WaitGroup for coordination
+	wg sync.WaitGroup
 )
 
-func main() {
-	// Command line flags for profiling
-	cpuProfile := flag.String("cpuprofile", "", "write cpu profile to file")
-	blockProfile := flag.String("blockprofile", "", "write block profile to file") 
-	mutexProfile := flag.String("mutexprofile", "", "write mutex profile to file")
-	httpMode := flag.Bool("http", false, "run in HTTP server mode with pprof endpoints")
-	highContention := flag.Bool("highcontention", false, "simulate high mutex contention")
-	duration := flag.Int("duration", 60, "duration to run in seconds")
-	flag.Parse()
-
-	// Enable block and mutex profiling
-	runtime.SetBlockProfileRate(1)
-	runtime.SetMutexProfileFraction(1)
-
-	// Start CPU profiling if requested
-	if *cpuProfile != "" {
-		f, err := os.Create(*cpuProfile)
-		if err != nil {
-			log.Fatal("could not create CPU profile: ", err)
-		}
-		defer f.Close()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal("could not start CPU profile: ", err)
-		}
-		defer pprof.StopCPUProfile()
-	}
-
-	// HTTP mode setup
-	if *httpMode {
-		fmt.Println("Starting HTTP server with pprof endpoints on :6062")
-		fmt.Println("Visit http://localhost:6062/debug/pprof/ to view profiling data")
-		fmt.Println("High contention mode:", *highContention)
+// Write to the shared resource with a regular mutex (high contention)
+func writeWithMutex(id int, iterations int) {
+	defer wg.Done()
+	
+	for i := 0; i < iterations; i++ {
+		// Simulate some work before acquiring the lock
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(5)))
 		
-		// Start the concurrency simulation in the background
-		go runConcurrencySimulation(*highContention, 0) // Run indefinitely in HTTP mode
+		basicResource.mutex.Lock()
+		// Critical section - intentionally sleep while holding the lock to create contention
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(10)))
 		
-		// Listen on a different port
-		log.Fatal(http.ListenAndServe(":6062", nil))
-		return
-	}
-	
-	// Run the simulation for specified duration
-	fmt.Printf("Running concurrency simulation for %d seconds...\n", *duration)
-	fmt.Println("High contention mode:", *highContention)
-	
-	runConcurrencySimulation(*highContention, *duration)
-	
-	// Write block profile if requested
-	if *blockProfile != "" {
-		f, err := os.Create(*blockProfile)
-		if err != nil {
-			log.Fatal("could not create block profile: ", err)
-		}
-		defer f.Close()
-		if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
-			log.Fatal("could not write block profile: ", err)
-		}
-		fmt.Println("Block profile written to", *blockProfile)
-	}
-	
-	// Write mutex profile if requested
-	if *mutexProfile != "" {
-		f, err := os.Create(*mutexProfile)
-		if err != nil {
-			log.Fatal("could not create mutex profile: ", err)
-		}
-		defer f.Close()
-		if err := pprof.Lookup("mutex").WriteTo(f, 0); err != nil {
-			log.Fatal("could not write mutex profile: ", err)
-		}
-		fmt.Println("Mutex profile written to", *mutexProfile)
+		// Update data
+		key := fmt.Sprintf("worker-%d", id)
+		basicResource.data[key] = basicResource.data[key] + 1
+		basicResource.counter++
+		
+		basicResource.mutex.Unlock()
 	}
 }
 
-// runConcurrencySimulation executes various goroutines that contend for shared resources
-func runConcurrencySimulation(highContention bool, durationSeconds int) {
-	done := make(chan bool)
+// Read from the shared resource with a regular mutex (high contention)
+func readWithMutex(id int, iterations int) {
+	defer wg.Done()
 	
-	// Set up a timeout if durationSeconds > 0
-	if durationSeconds > 0 {
-		go func() {
-			time.Sleep(time.Duration(durationSeconds) * time.Second)
-			close(done)
-		}()
+	for i := 0; i < iterations; i++ {
+		// Simulate some work before acquiring the lock
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(3)))
+		
+		basicResource.mutex.Lock()
+		// Just read the data
+		key := fmt.Sprintf("worker-%d", id % 5) // Read from a limited set of keys
+		_ = basicResource.data[key]
+		_ = basicResource.counter
+		
+		basicResource.mutex.Unlock()
 	}
-	
-	// Determine number of goroutines based on contention level
-	readers := 5
-	writers := 3
-	if highContention {
-		readers = 20
-		writers = 10
-	}
-	
-	// Start stats reporting
-	go reportStats(done)
-	
-	// Start reader goroutines
-	for i := 0; i < readers; i++ {
-		waitGroup.Add(1)
-		go dataReader(i, done, highContention)
-	}
-	
-	// Start writer goroutines
-	for i := 0; i < writers; i++ {
-		waitGroup.Add(1)
-		go dataWriter(i, done, highContention)
-	}
-	
-	// Start counter incrementers
-	for i := 0; i < 3; i++ {
-		waitGroup.Add(1)
-		go counterIncrementer(i, done, highContention)
-	}
-	
-	// In HTTP mode, we never complete
-	if durationSeconds <= 0 {
-		select {} // Block forever
-	}
-	
-	// Wait for all goroutines to finish
-	waitGroup.Wait()
-	fmt.Println("Concurrency simulation complete")
 }
 
-// dataReader reads data with a shared lock, simulating read operations
-func dataReader(id int, done <-chan bool, highContention bool) {
-	defer waitGroup.Done()
+// Write to the shared resource with a RWMutex (lower contention for readers)
+func writeWithRWMutex(id int, iterations int) {
+	defer wg.Done()
 	
-	keyCount := 100
-	readInterval := 10 * time.Millisecond
-	if highContention {
-		readInterval = 2 * time.Millisecond
+	for i := 0; i < iterations; i++ {
+		// Simulate some work before acquiring the lock
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(5)))
+		
+		rwResource.rwMutex.Lock()
+		// Critical section - intentionally sleep while holding the lock to create contention
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(10)))
+		
+		// Update data
+		key := fmt.Sprintf("worker-%d", id)
+		rwResource.data[key] = rwResource.data[key] + 1
+		rwResource.counter++
+		
+		rwResource.rwMutex.Unlock()
 	}
+}
+
+// Read from the shared resource with a RWMutex (lower contention)
+func readWithRWMutex(id int, iterations int) {
+	defer wg.Done()
 	
-	ticker := time.NewTicker(readInterval)
-	defer ticker.Stop()
+	for i := 0; i < iterations; i++ {
+		// Simulate some work before acquiring the lock
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(3)))
+		
+		rwResource.rwMutex.RLock() // Note: RLock for reading
+		// Just read the data
+		key := fmt.Sprintf("worker-%d", id % 5) // Read from a limited set of keys
+		_ = rwResource.data[key]
+		_ = rwResource.counter
+		
+		rwResource.rwMutex.RUnlock()
+	}
+}
+
+// Worker that produces work items
+func producer(numItems int) {
+	defer wg.Done()
 	
-	fmt.Printf("Reader %d started\n", id)
+	for i := 0; i < numItems; i++ {
+		// Create a work item
+		item := rand.Intn(100)
+		
+		// Try to send it to the channel - this will block if channel is full
+		select {
+		case workChannel <- item:
+			// Successfully sent
+			fmt.Printf("Produced: %d\n", item)
+		case <-controlChannel:
+			// Received shutdown signal
+			fmt.Println("Producer received shutdown signal")
+			return
+		}
+		
+		// Simulate variable production rate
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(10)))
+	}
+}
+
+// Worker that consumes work items
+func consumer(id int) {
+	defer wg.Done()
 	
 	for {
+		// Try to receive work - this will block if channel is empty
 		select {
-		case <-done:
-			fmt.Printf("Reader %d stopping\n", id)
-			return
-		case <-ticker.C:
-			// Pick a random key to read
-			key := fmt.Sprintf("key-%d", rand.Intn(keyCount))
-			
-			// Use a read lock to access the data
-			sharedDataMu.RLock()
-			data, exists := sharedData[key]
-			// Simulate some processing while holding the lock
-			if exists && highContention {
-				time.Sleep(time.Millisecond) // Hold lock longer in high contention mode
-				_ = len(data) // Do something with the data
+		case item, ok := <-workChannel:
+			if !ok {
+				// Channel closed
+				fmt.Printf("Consumer %d: channel closed\n", id)
+				return
 			}
-			sharedDataMu.RUnlock()
 			
-			// Do some work outside the lock
+			// Process the item (simulated work)
+			time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
+			result := item * 2
+			
+			// Send result
+			resultChannel <- result
+			fmt.Printf("Consumer %d: processed %d -> %d\n", id, item, result)
+			
+		case <-controlChannel:
+			// Received shutdown signal
+			fmt.Printf("Consumer %d received shutdown signal\n", id)
+			return
+		}
+	}
+}
+
+// Function that might deadlock (for demonstration)
+func potentialDeadlock() {
+	var mutex1, mutex2 sync.Mutex
+	
+	// Create two goroutines that acquire locks in opposite order
+	go func() {
+		for {
+			mutex1.Lock()
 			time.Sleep(time.Millisecond)
+			mutex2.Lock()
+			
+			// Critical section
+			time.Sleep(time.Millisecond * 10)
+			
+			mutex2.Unlock()
+			mutex1.Unlock()
+			
+			time.Sleep(time.Millisecond * 100)
 		}
-	}
+	}()
+	
+	go func() {
+		for {
+			// This creates a potential deadlock - acquiring locks in opposite order
+			mutex2.Lock()
+			time.Sleep(time.Millisecond)
+			mutex1.Lock()
+			
+			// Critical section
+			time.Sleep(time.Millisecond * 10)
+			
+			mutex1.Unlock()
+			mutex2.Unlock()
+			
+			time.Sleep(time.Millisecond * 100)
+		}
+	}()
 }
 
-// dataWriter writes data with an exclusive lock, simulating write operations
-func dataWriter(id int, done <-chan bool, highContention bool) {
-	defer waitGroup.Done()
+// Run mutex contention demo
+func runMutexDemo(numWorkers, iterations int) {
+	fmt.Printf("Starting mutex demo with %d workers, %d iterations each\n", numWorkers, iterations)
 	
-	keyCount := 100
-	writeInterval := 50 * time.Millisecond
-	if highContention {
-		writeInterval = 10 * time.Millisecond
-	}
-	
-	ticker := time.NewTicker(writeInterval)
-	defer ticker.Stop()
-	
-	fmt.Printf("Writer %d started\n", id)
-	
-	for {
-		select {
-		case <-done:
-			fmt.Printf("Writer %d stopping\n", id)
-			return
-		case <-ticker.C:
-			// Pick a random key to write
-			key := fmt.Sprintf("key-%d", rand.Intn(keyCount))
-			
-			// Create some random data
-			size := 1024 + rand.Intn(9216) // 1KB to 10KB
-			data := make([]byte, size)
-			rand.Read(data)
-			
-			// Take a write lock to update the data
-			sharedDataMu.Lock()
-			sharedData[key] = data
-			// Simulate processing while holding the lock
-			if highContention {
-				time.Sleep(2 * time.Millisecond) // Hold lock longer in high contention mode
-			}
-			sharedDataMu.Unlock()
-			
-			// Do some work outside the lock
-			time.Sleep(5 * time.Millisecond)
+	// Start a mix of readers and writers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		if i % 3 == 0 {
+			// 1/3 of workers write
+			go writeWithMutex(i, iterations)
+		} else {
+			// 2/3 of workers read
+			go readWithMutex(i, iterations)
 		}
 	}
+	
+	// Wait for all workers to finish
+	wg.Wait()
+	
+	fmt.Println("Mutex demo completed")
+	fmt.Printf("Final counter value: %d\n", basicResource.counter)
 }
 
-// counterIncrementer increments a counter with mutex protection, showing lock contention
-func counterIncrementer(id int, done <-chan bool, highContention bool) {
-	defer waitGroup.Done()
+// Run RWMutex contention demo
+func runRWMutexDemo(numWorkers, iterations int) {
+	fmt.Printf("Starting RWMutex demo with %d workers, %d iterations each\n", numWorkers, iterations)
 	
-	incrementInterval := 5 * time.Millisecond
-	if highContention {
-		incrementInterval = 1 * time.Millisecond
-	}
-	
-	ticker := time.NewTicker(incrementInterval)
-	defer ticker.Stop()
-	
-	fmt.Printf("Incrementer %d started\n", id)
-	
-	localCounter := 0
-	
-	for {
-		select {
-		case <-done:
-			fmt.Printf("Incrementer %d stopping (local: %d)\n", id, localCounter)
-			return
-		case <-ticker.C:
-			// Take mutex to increment counter
-			counterMu.Lock()
-			sharedCounter++
-			localCounter++
-			// Simulate some work while holding the lock
-			if highContention {
-				time.Sleep(time.Millisecond)
-			}
-			counterMu.Unlock()
-			
-			// Do some more work outside the lock
-			fibonacci(10) // Compute something to use CPU
+	// Start a mix of readers and writers
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		if i % 5 == 0 {
+			// 1/5 of workers write
+			go writeWithRWMutex(i, iterations)
+		} else {
+			// 4/5 of workers read
+			go readWithRWMutex(i, iterations)
 		}
 	}
-}
-
-// reportStats periodically reports statistics about the simulation
-func reportStats(done <-chan bool) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
 	
-	for {
-		select {
-		case <-done:
-			return
-		case <-ticker.C:
-			// Report shared counter value (requires lock)
-			counterMu.Lock()
-			counterValue := sharedCounter
-			counterMu.Unlock()
-			
-			// Report map size (requires lock)
-			sharedDataMu.RLock()
-			mapSize := len(sharedData)
-			var totalBytes int
-			for _, data := range sharedData {
-				totalBytes += len(data)
-			}
-			sharedDataMu.RUnlock()
-			
-			fmt.Printf("Stats: Counter=%d, Map entries=%d, Total data=%.2f MB\n", 
-				counterValue, mapSize, float64(totalBytes)/1024/1024)
-			
-			// Report goroutine count
-			fmt.Printf("Goroutines: %d\n", runtime.NumGoroutine())
-		}
-	}
+	// Wait for all workers to finish
+	wg.Wait()
+	
+	fmt.Println("RWMutex demo completed")
+	fmt.Printf("Final counter value: %d\n", rwResource.counter)
 }
 
-// fibonacci computes fibonacci numbers recursively (CPU intensive)
-func fibonacci(n int) int {
-	if n <= 1 {
-		return n
+// Run channel blocking demo
+func runChannelDemo(numProducers, numConsumers, itemsPerProducer int) {
+	fmt.Printf("Starting channel demo with %d producers and %d consumers\n", 
+		numProducers, numConsumers)
+	
+	// Start producers
+	for i := 0; i < numProducers; i++ {
+		wg.Add(1)
+		go producer(itemsPerProducer)
 	}
-	return fibonacci(n-1) + fibonacci(n-2)
+	
+	// Start consumers
+	for i := 0; i < numConsumers; i++ {
+		wg.Add(1)
+		go consumer(i)
+	}
+	
+	// Wait for all producers to finish
+	time.Sleep(time.Second * 5)
+	
+	// Signal all workers to stop
+	for i := 0; i < numProducers + numConsumers; i++ {
+		controlChannel <- true
+	}
+	
+	// Wait for all workers to finish
+	wg.Wait()
+	
+	// Count remaining items
+	close(workChannel)
+	close(resultChannel)
+	
+	var remainingWork, results int
+	for range workChannel {
+		remainingWork++
+	}
+	for range resultChannel {
+		results++
+	}
+	
+	fmt.Println("Channel demo completed")
+	fmt.Printf("Remaining work items: %d\n", remainingWork)
+	fmt.Printf("Results collected: %d\n", results)
+}
+
+func main() {
+	// Seed random number generator
+	rand.Seed(time.Now().UnixNano())
+	
+	// Create HTTP server for pprof
+	mux := http.NewServeMux()
+	
+	// Register pprof handlers
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	
+	// Register demo endpoints
+	mux.HandleFunc("/mutex-demo", func(w http.ResponseWriter, r *http.Request) {
+		numWorkers := 10   // Default
+		iterations := 100  // Default
+		
+		go runMutexDemo(numWorkers, iterations)
+		
+		fmt.Fprintf(w, "Started mutex contention demo with %d workers, %d iterations each\n", 
+			numWorkers, iterations)
+	})
+	
+	mux.HandleFunc("/rwmutex-demo", func(w http.ResponseWriter, r *http.Request) {
+		numWorkers := 20   // Default
+		iterations := 100  // Default
+		
+		go runRWMutexDemo(numWorkers, iterations)
+		
+		fmt.Fprintf(w, "Started RWMutex contention demo with %d workers, %d iterations each\n", 
+			numWorkers, iterations)
+	})
+	
+	mux.HandleFunc("/channel-demo", func(w http.ResponseWriter, r *http.Request) {
+		numProducers := 3    // Default
+		numConsumers := 5    // Default
+		itemsPerProducer := 50 // Default
+		
+		go runChannelDemo(numProducers, numConsumers, itemsPerProducer)
+		
+		fmt.Fprintf(w, "Started channel demo with %d producers and %d consumers\n", 
+			numProducers, numConsumers)
+	})
+	
+	// Deadlock demo (potentially dangerous)
+	mux.HandleFunc("/deadlock-demo", func(w http.ResponseWriter, r *http.Request) {
+		go potentialDeadlock()
+		fmt.Fprintf(w, "Started potential deadlock demo\n")
+	})
+	
+	// Status endpoint
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Concurrency App Status\n")
+		fmt.Fprintf(w, "--------------------\n")
+		fmt.Fprintf(w, "Goroutines: %d\n", runtime.NumGoroutine())
+		
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		fmt.Fprintf(w, "Alloc: %v MiB\n", m.Alloc/1024/1024)
+		fmt.Fprintf(w, "TotalAlloc: %v MiB\n", m.TotalAlloc/1024/1024)
+		fmt.Fprintf(w, "Sys: %v MiB\n", m.Sys/1024/1024)
+		fmt.Fprintf(w, "NumGC: %v\n", m.NumGC)
+	})
+	
+	// Start the server
+	fmt.Println("Starting concurrency demo server on :8082")
+	fmt.Println("Available endpoints:")
+	fmt.Println("  /mutex-demo - Run Mutex contention demo")
+	fmt.Println("  /rwmutex-demo - Run RWMutex contention demo")
+	fmt.Println("  /channel-demo - Run channel blocking demo")
+	fmt.Println("  /deadlock-demo - Run potential deadlock demo")
+	fmt.Println("  /status - View runtime stats")
+	fmt.Println("  /debug/pprof/ - pprof endpoint")
+	
+	http.ListenAndServe(":8082", mux)
 }
