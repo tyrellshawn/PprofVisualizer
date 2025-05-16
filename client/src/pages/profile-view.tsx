@@ -120,93 +120,96 @@ export default function ProfileView() {
           <ProfileTabs activeView={activeView} onChange={setActiveView} />
           
           <div className="overflow-y-auto p-4 flex-1 bg-neutral-100">
-            <TabsContent value="overview" className={activeView === "overview" ? "block" : "hidden"}>
-              <ProfileSummary profile={profile} />
-              
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white rounded-lg shadow-sm p-4 col-span-2">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="font-medium text-neutral-800">
-                      {profile.profileType === 'cpu' ? 'CPU Time Distribution' : 'Memory Allocation Distribution'}
-                    </h2>
-                    <div className="flex items-center space-x-2">
-                      <Button variant="outline" size="sm">
-                        Last 30 min
-                      </Button>
+            {/* Use conditional rendering instead of TabsContent */}
+            {activeView === "overview" && (
+              <div>
+                <ProfileSummary profile={profile} />
+                
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-white rounded-lg shadow-sm p-4 col-span-2">
+                    <div className="flex justify-between items-center mb-4">
+                      <h2 className="font-medium text-neutral-800">
+                        {profile.profileType === 'cpu' ? 'CPU Time Distribution' : 'Memory Allocation Distribution'}
+                      </h2>
+                      <div className="flex items-center space-x-2">
+                        <Button variant="outline" size="sm">
+                          Last 30 min
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="h-64 relative">
+                      <DistributionChart profile={profile} />
                     </div>
                   </div>
-                  <div className="h-64 relative">
-                    <DistributionChart profile={profile} />
+                  
+                  <div className="bg-white rounded-lg shadow-sm p-4">
+                    <div className="flex justify-between items-center mb-4">
+                      <h2 className="font-medium text-neutral-800">
+                        Top {profile.profileType === 'cpu' ? 'CPU' : 'Memory'} Consumers
+                      </h2>
+                    </div>
+                    <div>
+                      <TopFunctions profile={profile} limit={5} />
+                      <div className="mt-4">
+                        <Button 
+                          variant="link" 
+                          className="w-full text-primary"
+                          onClick={() => setActiveView("functions")}
+                        >
+                          View all functions
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 
-                <div className="bg-white rounded-lg shadow-sm p-4">
+                <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
                   <div className="flex justify-between items-center mb-4">
                     <h2 className="font-medium text-neutral-800">
-                      Top {profile.profileType === 'cpu' ? 'CPU' : 'Memory'} Consumers
+                      {profileUtils.getProfileTypeName(profile.profileType)} Flamegraph
                     </h2>
-                  </div>
-                  <div>
-                    <TopFunctions profile={profile} limit={5} />
-                    <div className="mt-4">
-                      <Button 
-                        variant="link" 
-                        className="w-full text-primary"
-                        onClick={() => setActiveView("functions")}
-                      >
-                        View all functions
+                    <div className="flex items-center space-x-2">
+                      <Button variant="outline" size="sm">
+                        <Icon name="mdi-magnify-plus-outline" className="mr-1" />
+                        Zoom
+                      </Button>
+                      <Button variant="outline" size="sm">
+                        <Icon name="mdi-filter-outline" className="mr-1" />
+                        Filter
                       </Button>
                     </div>
                   </div>
-                </div>
-              </div>
-              
-              <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-medium text-neutral-800">
-                    {profileUtils.getProfileTypeName(profile.profileType)} Flamegraph
-                  </h2>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="outline" size="sm">
-                      <Icon name="mdi-magnify-plus-outline" className="mr-1" />
-                      Zoom
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Icon name="mdi-filter-outline" className="mr-1" />
-                      Filter
-                    </Button>
+                  <div className="h-64 relative overflow-hidden">
+                    <Flamegraph data={flameGraphData} />
                   </div>
                 </div>
-                <div className="h-64 relative overflow-hidden">
-                  <Flamegraph data={flameGraphData} />
-                </div>
-              </div>
-              
-              <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                <div className="flex justify-between items-center p-4 border-b border-neutral-200">
-                  <h2 className="font-medium text-neutral-800">Function Call Details</h2>
-                  <div className="flex items-center">
-                    <div className="relative mr-2">
-                      <input 
-                        type="text" 
-                        placeholder="Search functions..." 
-                        className="w-64 pl-8 pr-2 py-1.5 text-sm border border-neutral-300 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" 
-                      />
-                      <Icon name="mdi-magnify" className="absolute left-2.5 top-2 text-neutral-400" />
+                
+                <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                  <div className="flex justify-between items-center p-4 border-b border-neutral-200">
+                    <h2 className="font-medium text-neutral-800">Function Call Details</h2>
+                    <div className="flex items-center">
+                      <div className="relative mr-2">
+                        <input 
+                          type="text" 
+                          placeholder="Search functions..." 
+                          className="w-64 pl-8 pr-2 py-1.5 text-sm border border-neutral-300 rounded focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" 
+                        />
+                        <Icon name="mdi-magnify" className="absolute left-2.5 top-2 text-neutral-400" />
+                      </div>
+                      <Button variant="outline" size="sm">
+                        <Icon name="mdi-filter-outline" className="mr-1" />
+                        Filter
+                      </Button>
                     </div>
-                    <Button variant="outline" size="sm">
-                      <Icon name="mdi-filter-outline" className="mr-1" />
-                      Filter
-                    </Button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <TopFunctions profile={profile} detailed />
                   </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <TopFunctions profile={profile} detailed />
-                </div>
               </div>
-            </TabsContent>
+            )}
             
-            <TabsContent value="flamegraph" className={activeView === "flamegraph" ? "block" : "hidden"}>
+            {activeView === "flamegraph" && (
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="font-medium text-neutral-800">
@@ -235,9 +238,9 @@ export default function ProfileView() {
                   <span>Click on a function block to zoom in and see more details</span>
                 </div>
               </div>
-            </TabsContent>
+            )}
             
-            <TabsContent value="functions" className={activeView === "functions" ? "block" : "hidden"}>
+            {activeView === "functions" && (
               <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                 <div className="flex justify-between items-center p-4 border-b border-neutral-200">
                   <h2 className="font-medium text-neutral-800">Top Functions</h2>
@@ -260,9 +263,9 @@ export default function ProfileView() {
                   <TopFunctions profile={profile} detailed />
                 </div>
               </div>
-            </TabsContent>
+            )}
             
-            <TabsContent value="callgraph" className={activeView === "callgraph" ? "block" : "hidden"}>
+            {activeView === "callgraph" && (
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="font-medium text-neutral-800">Call Graph</h2>
@@ -287,9 +290,9 @@ export default function ProfileView() {
                   </div>
                 </div>
               </div>
-            </TabsContent>
+            )}
             
-            <TabsContent value="timeline" className={activeView === "timeline" ? "block" : "hidden"}>
+            {activeView === "timeline" && (
               <div className="bg-white rounded-lg shadow-sm p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="font-medium text-neutral-800">Timeline</h2>
@@ -303,7 +306,7 @@ export default function ProfileView() {
                   <TimelineChart profile={profile} />
                 </div>
               </div>
-            </TabsContent>
+            )}
           </div>
         </main>
       </div>
