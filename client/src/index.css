@@ -2,6 +2,89 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Blueprint CSS */
+@import "~@blueprintjs/core/lib/css/blueprint.css";
+@import "~@blueprintjs/icons/lib/css/blueprint-icons.css";
+@import "~@blueprintjs/popover2/lib/css/blueprint-popover2.css";
+@import "~@blueprintjs/select/lib/css/blueprint-select.css";
+@import "~@blueprintjs/table/lib/css/table.css";
+
+/* Custom color scheme for profiling data */
+:root {
+  --color-cpu: #2965CC;
+  --color-heap: #29A634;
+  --color-block: #D13913;
+  --color-mutex: #8F398F;
+  --color-goroutine: #D9822B;
+  --color-threadcreate: #752F75;
+  
+  --color-metric-high: #DB3737;
+  --color-metric-medium: #D9822B;
+  --color-metric-low: #0F9960;
+  
+  --bg-dark: #293742;
+  --bg-light: #F5F8FA;
+}
+
+/* Blueprint dark theme customization */
+.bp5-dark {
+  --bg-color: var(--bg-dark);
+  color: #F5F8FA;
+}
+
+.profile-cpu {
+  border-left: 4px solid var(--color-cpu);
+}
+
+.profile-heap {
+  border-left: 4px solid var(--color-heap);
+}
+
+.profile-block {
+  border-left: 4px solid var(--color-block);
+}
+
+.profile-mutex {
+  border-left: 4px solid var(--color-mutex);
+}
+
+.profile-goroutine {
+  border-left: 4px solid var(--color-goroutine);
+}
+
+.profile-threadcreate {
+  border-left: 4px solid var(--color-threadcreate);
+}
+
+.metric-high {
+  color: var(--color-metric-high);
+  font-weight: 600;
+}
+
+.metric-medium {
+  color: var(--color-metric-medium);
+  font-weight: 500;
+}
+
+.metric-low {
+  color: var(--color-metric-low);
+}
+
+/* Enhanced visualization containers */
+.visualization-container {
+  background-color: white;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(16, 22, 26, 0.1), 0 1px 1px rgba(16, 22, 26, 0.2);
+  padding: 20px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.bp5-dark .visualization-container {
+  background-color: #30404D;
+  box-shadow: 0 0 0 1px rgba(16, 22, 26, 0.2), 0 1px 1px rgba(16, 22, 26, 0.4);
+}
+
 :root {
   --background: 0 0% 100%;
   --foreground: 20 14.3% 4.1%;
