@@ -1,6 +1,6 @@
 # PProfViz - Go pprof Visualization Tool
 
-PProfViz is an open-source tool for visualizing Go pprof profiles with an improved user interface. It provides intuitive visualizations for CPU, memory, block, and mutex profiles.
+PProfViz is an open-source tool for visualizing Go pprof profiles with an improved user interface built with replit agent. It provides intuitive visualizations for CPU, memory, block, and mutex profiles.
 
 ## Features
 
